@@ -1,0 +1,285 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StudySpace - Your Smart Study Companion</title>
+  <link rel="stylesheet" href="styles.css">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <meta name="theme-color" content="#007AFF">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <style>
+    .notification {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(100%);
+      background: var(--surface-color);
+      padding: 1rem 2rem;
+      border-radius: 50px;
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      z-index: 1001;
+      transition: transform 0.3s ease;
+      border: 1px solid var(--border-color);
+    }
+
+    .notification.show {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .notification.success {
+      border-left: 4px solid #32D74B;
+    }
+
+    .notification.error {
+      border-left: 4px solid #FF453A;
+    }
+
+    .notification i {
+      font-size: 1.2rem;
+    }
+
+    .notification.success i {
+      color: #32D74B;
+    }
+
+    .notification.error i {
+      color: #FF453A;
+    }
+  </style>
+</head>
+<body>
+  <div class="welcome-screen" id="welcomeScreen">
+    <div class="welcome-content">
+      <div class="logo">
+        <svg width="100" height="100" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" stroke-width="2"/>
+          <path d="M30 50 L45 65 L70 35" stroke="currentColor" stroke-width="2" fill="none"/>
+        </svg>
+      </div>
+      <h1>Welcome to StudySpace</h1>
+      <p>Your all-in-one study companion</p>
+      <div class="welcome-features">
+        <div class="feature">
+          <i class="fas fa-clock"></i>
+          <span>Smart Study Timer</span>
+        </div>
+        <div class="feature">
+          <i class="fas fa-sticky-note"></i>
+          <span>Quick Notes</span>
+        </div>
+        <div class="feature">
+          <i class="fas fa-tasks"></i>
+          <span>Task Management</span>
+        </div>
+      </div>
+      <button onclick="startApp()" class="btn-primary start-btn">Get Started</button>
+    </div>
+  </div>
+
+  <div class="guide-overlay hidden" id="userGuide">
+    <div class="guide-content">
+      <h2>Quick Start Guide</h2>
+      <div class="guide-steps">
+        <div class="guide-step">
+          <div class="step-number">1</div>
+          <h3>Study Timer</h3>
+          <p>Set custom study durations and track your focus time</p>
+        </div>
+        <div class="guide-step">
+          <div class="step-number">2</div>
+          <h3>Quick Notes</h3>
+          <p>Create and organize your study notes with ease</p>
+        </div>
+        <div class="guide-step">
+          <div class="step-number">3</div>
+          <h3>Task Management</h3>
+          <p>Keep track of your tasks with color-coded to-do lists</p>
+        </div>
+      </div>
+      <button onclick="closeGuide()" class="btn-primary">Let's Start!</button>
+    </div>
+  </div>
+
+  <div class="app-container hidden" id="appContainer">
+    <nav class="sidebar">
+      <div class="theme-switcher">
+        <button onclick="toggleTheme()" class="theme-btn">
+          <i class="fas fa-moon"></i>
+        </button>
+      </div>
+      <div class="nav-items">
+        <a href="#dashboard" class="nav-item active">
+          <i class="fas fa-home"></i>
+          <span>Dashboard</span>
+        </a>
+        <a href="#notes" class="nav-item">
+          <i class="fas fa-sticky-note"></i>
+          <span>Notes</span>
+        </a>
+        <a href="#timer" class="nav-item">
+          <i class="fas fa-clock"></i>
+          <span>Timer</span>
+        </a>
+        <a href="#todos" class="nav-item">
+          <i class="fas fa-tasks"></i>
+          <span>Tasks</span>
+        </a>
+      </div>
+    </nav>
+
+    <main class="main-content">
+      <div class="toolbar">
+        <input type="text" placeholder="Search notes..." class="search-bar">
+        <button class="btn-primary" onclick="createNewNote()">
+          <i class="fas fa-plus"></i> New Note
+        </button>
+      </div>
+
+      <div class="content-area">
+        <div id="dashboard" class="view active">
+          <h2>Dashboard</h2>
+          <div class="quick-stats">
+            <div class="stat-card">
+              <h3>Study Time Today</h3>
+              <p id="studyTimeToday">0min</p>
+            </div>
+            <div class="stat-card">
+              <h3>Notes Created</h3>
+              <p id="notesCount">0</p>
+            </div>
+            <div class="stat-card">
+              <h3>Tasks Completed</h3>
+              <p id="taskCount">0/0</p>
+            </div>
+          </div>
+          <div class="notes-preview">
+            <h3>Recent Notes</h3>
+            <div class="notes-list" id="recentNotes"></div>
+          </div>
+        </div>
+
+        <div id="notes" class="view">
+          <h2>My Notes</h2>
+          <div class="notes-grid" id="notesGrid"></div>
+        </div>
+
+        <div id="timer" class="view">
+          <div class="timer-container centered">
+            <h2>Study Timer</h2>
+            <div class="timer-duration-selector">
+              <label for="timerDuration">Timer Duration:</label>
+              <select id="timerDuration" onchange="resetTimer()">
+                <option value="25">25 minutes</option>
+                <option value="30">30 minutes</option>
+                <option value="45">45 minutes</option>
+                <option value="60">60 minutes</option>
+                <option value="90">90 minutes</option>
+                <option value="120">120 minutes</option>
+              </select>
+            </div>
+            <div class="timer-display">25:00</div>
+            <div class="timer-controls">
+              <button class="btn-primary" onclick="startTimer()">Start</button>
+              <button class="btn-secondary" onclick="pauseTimer()">Pause</button>
+              <button class="btn-secondary" onclick="resetTimer()">Reset</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="todos" class="view">
+          <h2>To-Do List</h2>
+          <div class="todos-container">
+            <div class="todo-filters">
+              <div class="filter-group">
+                <label for="filterStatus">Status</label>
+                <select id="filterStatus" class="filter-select" onchange="displayTodos()">
+                  <option value="all">All</option>
+                  <option value="active">Active</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label for="filterPriority">Priority</label>
+                <select id="filterPriority" class="filter-select" onchange="displayTodos()">
+                  <option value="all">All</option>
+                  <option value="High">High</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Low">Low</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label for="filterCategory">Category</label>
+                <select id="filterCategory" class="filter-select" onchange="displayTodos()">
+                  <option value="all">All</option>
+                  <option value="Study">Study</option>
+                  <option value="Work">Work</option>
+                  <option value="Personal">Personal</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label for="sortTodos">Sort By</label>
+                <select id="sortTodos" class="filter-select" onchange="displayTodos()">
+                  <option value="created">Created Date</option>
+                  <option value="dueDate">Due Date</option>
+                  <option value="priority">Priority</option>
+                </select>
+              </div>
+            </div>
+            <div class="todo-input-container">
+              <input type="text" id="todoInput" class="todo-input" placeholder="Add a new task...">
+              <select id="todoColor" class="color-select">
+                <option value="#FF453A">Red</option>
+                <option value="#FF9F0A">Orange</option>
+                <option value="#32D74B">Green</option>
+                <option value="#64D2FF">Blue</option>
+                <option value="#0A84FF">Deep Blue</option>
+                <option value="#BF5AF2">Purple</option>
+              </select>
+              <select id="todoPriority" class="priority-select">
+                <option value="High">High Priority</option>
+                <option value="Medium">Medium Priority</option>
+                <option value="Low">Low Priority</option>
+              </select>
+              <select id="todoCategory" class="category-select">
+                <option value="Study">Study</option>
+                <option value="Work">Work</option>
+                <option value="Personal">Personal</option>
+                <option value="Other">Other</option>
+              </select>
+              <input type="date" id="todoDueDate" class="due-date-input">
+              <button class="btn-primary" onclick="addTodo()">
+                <i class="fas fa-plus"></i> Add Task
+              </button>
+            </div>
+            <div class="todo-list" id="todoList"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="note-modal hidden" id="noteModal">
+    <div class="note-editor">
+      <input type="text" id="noteTitle" placeholder="Note Title" class="note-title-input">
+      <textarea id="noteContent" placeholder="Start writing..." class="note-content-input"></textarea>
+      <div class="note-actions">
+        <button class="btn-secondary" onclick="closeNoteModal()">
+          <i class="fas fa-times"></i>
+          Cancel
+        </button>
+        <button class="save-note-btn" onclick="saveNote()">
+          <i class="fas fa-save"></i>
+          Save Note
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
