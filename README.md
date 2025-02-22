@@ -1,2 +1,2 @@
 # Self-regulation
-This is how you organize yourself
+**URL:** https://rk11dz.github.io/Self-regulation/
