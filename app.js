@@ -2,6 +2,7 @@
 let currentTheme = localStorage.getItem('theme') || 'light';
 let timerInterval = null;
 let timeLeft = 25 * 60; // 25 minutes in seconds
+let timerEndTime = null; // Store the end time for background running
 let notes = JSON.parse(localStorage.getItem('notes')) || [];
 let totalStudyTime = parseInt(localStorage.getItem('studyTime')) || 0;
 let todos = JSON.parse(localStorage.getItem('todos')) || [];
@@ -27,6 +28,29 @@ document.addEventListener('DOMContentLoaded', function() {
       option.style.backgroundColor = color;
       colorSelect.appendChild(option);
     });
+  }
+  
+  const endTime = parseInt(localStorage.getItem('timerEndTime')) || 0;
+  if (endTime > Date.now()) {
+    timeLeft = Math.ceil((endTime - Date.now()) / 1000);
+    startTimer();
+  }
+  
+  // Request necessary permissions
+  if ('Notification' in window) {
+    Notification.requestPermission();
+  }
+  
+  // Initialize statistics
+  updateStatistics();
+  
+  // Add timer progress bar
+  const timerContainer = document.querySelector('.timer-container');
+  if (timerContainer) {
+    const progressBar = document.createElement('div');
+    progressBar.className = 'timer-progress';
+    progressBar.innerHTML = '<div class="timer-progress-bar"></div>';
+    timerContainer.insertBefore(progressBar, timerContainer.querySelector('.timer-controls'));
   }
 });
 
@@ -58,13 +82,12 @@ function startApp() {
 function toggleTheme() {
   currentTheme = currentTheme === 'light' ? 'dark' : 'light';
   document.documentElement.setAttribute('data-theme', currentTheme);
-  safelySetItem('theme', currentTheme);
+  localStorage.setItem('theme', currentTheme);
   
-  // Force re-render of components that might need theme update
-  if (document.querySelector('#notes.view:not(.hidden)')) {
+  // Update all views to reflect new theme
+  if (document.querySelector('#notes.view.active')) {
     displayNotes();
-  }
-  if (document.querySelector('#todos.view:not(.hidden)')) {
+  } else if (document.querySelector('#todos.view.active')) {
     displayTodos();
   }
   loadDashboard();
@@ -94,49 +117,130 @@ function startTimer() {
     timeLeft = parseInt(durationSelect.value) * 60;
   }
   
-  document.querySelector('.timer-display').style.animation = 'pulseGlow 2s infinite';
+  timerEndTime = Date.now() + (timeLeft * 1000);
+  localStorage.setItem('timerEndTime', timerEndTime);
   
+  const timerContainer = document.querySelector('.timer-container');
+  timerContainer.classList.add('timer-active');
+  
+  updateTimerProgress();
   timerInterval = setInterval(() => {
-    if (timeLeft > 0) {
-      timeLeft--;
+    const now = Date.now();
+    if (now >= timerEndTime) {
+      timerComplete();
+    } else {
+      timeLeft = Math.ceil((timerEndTime - now) / 1000);
       updateTimerDisplay();
-      
-      if (timeLeft <= 0) {
-        clearInterval(timerInterval);
-        timerInterval = null;
-        document.querySelector('.timer-display').style.animation = '';
-        
-        // Update total study time
-        const duration = parseInt(document.getElementById('timerDuration').value);
-        totalStudyTime += duration;
-        safelySetItem('studyTime', totalStudyTime);
-        updateStudyStats();
-        
-        // Show notification
-        if (Notification.permission === 'granted') {
-          new Notification('Study Timer Complete!', {
-            body: 'Great job! Take a break.',
-            icon: '/favicon.ico'
-          });
-        }
-        
-        alert('Time is up! Great study session!');
-      }
+      updateTimerProgress();
     }
   }, 1000);
+}
+
+function updateTimerProgress() {
+  const totalTime = parseInt(document.getElementById('timerDuration').value) * 60;
+  const progressBar = document.querySelector('.timer-progress-bar');
+  if (progressBar) {
+    const progress = (timeLeft / totalTime) * 100;
+    progressBar.style.width = `${progress}%`;
+    progressBar.style.background = `linear-gradient(90deg, 
+      var(--gradient-start) ${progress}%, 
+      var(--gradient-end) ${progress + 100}%
+    )`;
+  }
+}
+
+function updateTimer() {
+  const now = Date.now();
+  const endTime = parseInt(localStorage.getItem('timerEndTime')) || 0;
+  
+  if (now >= endTime) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+    timeLeft = 0;
+    updateTimerDisplay();
+    timerComplete();
+  } else {
+    timeLeft = Math.ceil((endTime - now) / 1000);
+    updateTimerDisplay();
+  }
 }
 
 function pauseTimer() {
   clearInterval(timerInterval);
   timerInterval = null;
+  localStorage.removeItem('timerEndTime');
+  const timerDisplay = document.querySelector('.timer-display');
+  timerDisplay.style.animation = '';
 }
 
 function resetTimer() {
   const durationSelect = document.getElementById('timerDuration');
-  timeLeft = parseInt(durationSelect.value) * 60; // Convert minutes to seconds
+  timeLeft = parseInt(durationSelect.value) * 60;
   updateTimerDisplay();
   clearInterval(timerInterval);
   timerInterval = null;
+  localStorage.removeItem('timerEndTime');
+  const timerDisplay = document.querySelector('.timer-display');
+  timerDisplay.style.animation = '';
+}
+
+function timerComplete() {
+  const timerDisplay = document.querySelector('.timer-display');
+  timerDisplay.style.animation = '';
+  
+  // Update total study time
+  const duration = parseInt(document.getElementById('timerDuration').value);
+  totalStudyTime += duration;
+  localStorage.setItem('studyTime', totalStudyTime);
+  updateStudyStats();
+  
+  // Play notification sound
+  playTimerCompleteSound();
+  
+  // Show notification
+  if (Notification.permission === 'granted') {
+    const notification = new Notification('Study Timer Complete!', {
+      body: 'Great job! Take a break.',
+      icon: 'data:image/svg+xml;base64,' + btoa(`
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="45" fill="#007AFF"/>
+          <path d="M30 50 L45 65 L70 35" stroke="white" stroke-width="8" fill="none"/>
+        </svg>
+      `),
+      silent: true
+    });
+  } else {
+    alert('Time is up! Great study session!');
+  }
+}
+
+function playTimerCompleteSound() {
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  
+  // Create oscillators for a pleasant bell sound
+  const frequencies = [523.25, 659.25, 783.99]; // C5, E5, G5
+  const oscillators = frequencies.map(freq => {
+    const osc = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    
+    gain.gain.value = 0;
+    gain.gain.setValueAtTime(0, audioContext.currentTime);
+    gain.gain.linearRampToValueAtTime(0.2, audioContext.currentTime + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 2);
+    
+    osc.connect(gain);
+    gain.connect(audioContext.destination);
+    
+    return osc;
+  });
+  
+  oscillators.forEach(osc => {
+    osc.start(audioContext.currentTime);
+    osc.stop(audioContext.currentTime + 2);
+  });
 }
 
 function updateTimerDisplay() {
@@ -157,53 +261,68 @@ function closeNoteModal() {
 }
 
 function saveNote() {
-  const title = document.getElementById('noteTitle').value.trim();
-  const content = document.getElementById('noteContent').value.trim();
+  const titleInput = document.getElementById('noteTitle');
+  const contentInput = document.getElementById('noteContent');
+  const title = titleInput.value.trim();
+  const content = contentInput.value.trim();
   
   if (!title || !content) {
     showNotification('Please fill in both title and content', 'error');
     return;
   }
 
-  try {
-    const note = {
-      id: Date.now(),
-      title,
-      content,
-      created: new Date().toISOString(),
-      lastModified: new Date().toISOString()
-    };
+  const note = {
+    id: Date.now(),
+    title,
+    content,
+    created: new Date().toISOString(),
+    lastModified: new Date().toISOString()
+  };
 
-    notes.unshift(note);
-    saveNotes();
-    closeNoteModal();
-    loadDashboard();
+  notes.unshift(note);
+  saveNotes();
+  closeNoteModal();
+  
+  // Clear inputs
+  titleInput.value = '';
+  contentInput.value = '';
+  
+  // Update all relevant views
+  if (document.querySelector('#notes.view.active')) {
     displayNotes();
-    showNotification('Note saved successfully!', 'success');
-  } catch (error) {
-    console.error('Error saving note:', error);
-    showNotification('Error saving note. Please try again.', 'error');
+  } else if (document.querySelector('#dashboard.view.active')) {
+    loadDashboard();
   }
+  
+  showNotification('Note saved successfully!', 'success');
 }
 
-function showNotification(message, type = 'success') {
+function showNotification(message, type = 'success', duration = 3000) {
   const notification = document.createElement('div');
   notification.className = `notification ${type}`;
   notification.innerHTML = `
     <i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i>
     <span>${message}</span>
+    <button onclick="this.parentElement.remove()" class="notification-close">
+      <i class="fas fa-times"></i>
+    </button>
   `;
   
+  // Remove existing notifications
+  document.querySelectorAll('.notification').forEach(n => n.remove());
+  
   document.body.appendChild(notification);
+  requestAnimationFrame(() => {
+    notification.classList.add('show');
+    notification.style.animation = 'slideInFromBottom 0.3s ease-out';
+  });
   
-  // Animate in
-  setTimeout(() => notification.classList.add('show'), 100);
-  
-  // Remove after 3 seconds
-  setTimeout(() => {
-    notification.classList.remove('show');
-    setTimeout(() => notification.remove(), 300);
-  }, 3000);
+  if (duration) {
+    setTimeout(() => {
+      notification.style.animation = 'slideOutToBottom 0.3s ease-in';
+      setTimeout(() => notification.remove(), 300);
+    }, duration);
+  }
 }
 
 function createNoteElement(note) {
@@ -211,7 +330,7 @@ function createNoteElement(note) {
   div.className = 'note-card';
   div.innerHTML = `
     <h3>${escapeHtml(note.title)}</h3>
-    <p>${escapeHtml(note.content.substring(0, 100))}${note.content.length > 100 ? '...' : ''}</p>
+    <div class="note-content">${formatNoteContent(note.content)}</div>
     <div class="note-footer">
       <span>
         <i class="far fa-clock"></i>
@@ -258,8 +377,20 @@ function deleteNote(id) {
 function displayNotes() {
   const notesGrid = document.getElementById('notesGrid');
   notesGrid.innerHTML = '';
-  notes.forEach(note => {
+  
+  if (notes.length === 0) {
+    notesGrid.innerHTML = `
+      <div class="empty-state">
+        <i class="fas fa-sticky-note"></i>
+        <p>No notes yet. Create your first note!</p>
+      </div>
+    `;
+    return;
+  }
+  
+  notes.forEach((note, index) => {
     const noteElement = createNoteElement(note);
+    noteElement.style.animation = `noteCardAppear 0.3s ease-out ${index * 0.05}s forwards`;
     notesGrid.appendChild(noteElement);
   });
 }
@@ -380,37 +511,50 @@ function createTodoElement(todo) {
 function addTodo() {
   const input = document.getElementById('todoInput');
   const text = input.value.trim();
-  const colorSelect = document.getElementById('todoColor');
-  const prioritySelect = document.getElementById('todoPriority');
-  const categorySelect = document.getElementById('todoCategory');
-  const dueDateInput = document.getElementById('todoDueDate');
   
-  if (!text) return;
+  if (!text) {
+    showNotification('Please enter a task description', 'error');
+    input.focus();
+    return;
+  }
   
   const todo = {
     id: Date.now(),
     text: text,
     completed: false,
-    color: colorSelect.value,
-    priority: prioritySelect.value,
-    category: categorySelect.value,
-    dueDate: dueDateInput.value,
+    color: document.getElementById('todoColor').value,
+    priority: document.getElementById('todoPriority').value,
+    category: document.getElementById('todoCategory').value,
+    dueDate: document.getElementById('todoDueDate').value,
     created: new Date().toISOString()
   };
   
   todos.unshift(todo);
   saveTodos();
   
-  // Clear inputs
+  const todoList = document.getElementById('todoList');
+  const todoElement = createTodoElement(todo);
+  todoElement.style.opacity = '0';
+  todoElement.style.transform = 'translateY(-20px)';
+  
+  if (todoList.firstChild) {
+    todoList.insertBefore(todoElement, todoList.firstChild);
+  } else {
+    todoList.appendChild(todoElement);
+  }
+  
+  // Trigger reflow
+  todoElement.offsetHeight;
+  
+  // Add animation
+  todoElement.style.transition = 'all 0.3s ease-out';
+  todoElement.style.opacity = '1';
+  todoElement.style.transform = 'translateY(0)';
+  
   input.value = '';
-  dueDateInput.value = '';
+  document.getElementById('todoDueDate').value = '';
   
-  // Reset selects to default values
-  colorSelect.selectedIndex = 0;
-  prioritySelect.selectedIndex = 0;
-  categorySelect.selectedIndex = 0;
-  
-  displayTodos();
+  showNotification('Task added successfully!');
   updateTaskStats();
 }
 
@@ -520,6 +664,58 @@ function setupEventListeners() {
       saveNote();
     }
   });
+  
+  document.querySelector('.search-bar').addEventListener('input', function(e) {
+    const searchTerm = e.target.value.toLowerCase().trim();
+    const activeView = document.querySelector('.view.active').id;
+    
+    if (searchTerm === '') {
+      if (activeView === 'notes') {
+        displayNotes();
+      } else if (activeView === 'todos') {
+        displayTodos();
+      }
+      return;
+    }
+
+    if (activeView === 'notes') {
+      const filteredNotes = notes.filter(note => 
+        note.title.toLowerCase().includes(searchTerm) || 
+        note.content.toLowerCase().includes(searchTerm)
+      );
+      displayFilteredNotes(filteredNotes);
+    } else if (activeView === 'todos') {
+      const filteredTodos = todos.filter(todo =>
+        todo.text.toLowerCase().includes(searchTerm) ||
+        todo.category.toLowerCase().includes(searchTerm) ||
+        todo.priority.toLowerCase().includes(searchTerm)
+      );
+      displayFilteredTodos(filteredTodos);
+    }
+  });
+
+  // Update placeholder based on active view
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const view = item.getAttribute('href').substring(1);
+      const searchBar = document.querySelector('.search-bar');
+      searchBar.value = ''; // Clear search when switching views
+      searchBar.placeholder = view === 'notes' ? 'Search notes...' : 'Search tasks...';
+    });
+  });
+  
+  document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      document.querySelector('.search-bar').focus();
+    }
+    
+    if (e.key === 'Escape') {
+      if (!document.getElementById('noteModal').classList.contains('hidden')) {
+        closeNoteModal();
+      }
+    }
+  });
 }
 
 function loadView(view) {
@@ -581,9 +777,6 @@ function requestNotificationPermission() {
   }
 }
 
-// Call this when the app starts
-requestNotificationPermission();
-
 // Add error handling for localStorage operations
 function safelySetItem(key, value) {
   try {
@@ -614,5 +807,120 @@ function saveTodos() {
   } catch (error) {
     console.error('Error saving todos:', error);
     alert('There was an error saving your tasks. Please try again.');
+  }
+}
+
+function displayFilteredNotes(filteredNotes) {
+  const notesGrid = document.getElementById('notesGrid');
+  notesGrid.innerHTML = '';
+  
+  if (filteredNotes.length === 0) {
+    notesGrid.innerHTML = `
+      <div class="empty-state">
+        <i class="fas fa-search"></i>
+        <p>No notes found matching your search</p>
+      </div>
+    `;
+    return;
+  }
+  
+  filteredNotes.forEach(note => {
+    const noteElement = createNoteElement(note);
+    noteElement.style.animation = 'fadeInUp 0.3s ease-out forwards';
+    notesGrid.appendChild(noteElement);
+  });
+}
+
+function displayFilteredTodos(filteredTodos) {
+  const todoList = document.getElementById('todoList');
+  todoList.innerHTML = '';
+  
+  if (filteredTodos.length === 0) {
+    todoList.innerHTML = `
+      <div class="empty-state">
+        <i class="fas fa-search"></i>
+        <p>No tasks found matching your search</p>
+      </div>
+    `;
+    return;
+  }
+  
+  filteredTodos.forEach((todo, index) => {
+    const todoElement = createTodoElement(todo);
+    todoElement.style.animation = `fadeInUp 0.3s ease-out ${index * 0.05}s forwards`;
+    todoList.appendChild(todoElement);
+  });
+}
+
+function updateStatistics() {
+  const completedTasks = todos.filter(todo => todo.completed).length;
+  const totalStudyMinutes = totalStudyTime;
+  const notesCreatedToday = notes.filter(note => 
+    new Date(note.created).toDateString() === new Date().toDateString()
+  ).length;
+  
+  localStorage.setItem('statistics', JSON.stringify({
+    completedTasks,
+    totalStudyMinutes,
+    notesCreatedToday,
+    lastUpdated: new Date().toISOString()
+  }));
+  
+  updateDashboardCharts();
+}
+
+function updateDashboardCharts() {
+  const stats = JSON.parse(localStorage.getItem('statistics')) || {};
+  const chartContainer = document.querySelector('.stats-chart');
+  
+  if (chartContainer) {
+    // Implementation of visual charts here
+    // You can use simple CSS-based charts or integrate with a charting library
+  }
+}
+
+document.addEventListener('visibilitychange', function() {
+  if (!document.hidden && timerInterval) {
+    // Resync timer when page becomes visible
+    updateTimer();
+  }
+});
+
+function formatNoteContent(content) {
+  // Convert URLs to clickable links
+  content = content.replace(
+    /(https?:\/\/[^\s]+)/g,
+    '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+  );
+  
+  // Convert markdown-style bold text
+  content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  
+  // Convert markdown-style italic text
+  content = content.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  
+  return content;
+}
+
+function enhancedSearch(searchTerm) {
+  const activeView = document.querySelector('.view.active').id;
+  searchTerm = searchTerm.toLowerCase().trim();
+
+  if (activeView === 'notes') {
+    const results = notes.filter(note => {
+      const titleMatch = note.title.toLowerCase().includes(searchTerm);
+      const contentMatch = note.content.toLowerCase().includes(searchTerm);
+      return titleMatch || contentMatch;
+    });
+    
+    displayFilteredNotes(results);
+  } else if (activeView === 'todos') {
+    const results = todos.filter(todo => {
+      return ['text', 'category', 'priority'].some(field => 
+        todo[field].toLowerCase().includes(searchTerm)
+      );
+    });
+    
+    displayFilteredTodos(results);
   }
 }
