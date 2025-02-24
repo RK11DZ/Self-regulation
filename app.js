@@ -8,6 +8,17 @@ let totalStudyTime = parseInt(localStorage.getItem('studyTime')) || 0;
 let todos = JSON.parse(localStorage.getItem('todos')) || [];
 const TASK_COLORS = ['#FF453A', '#FF9F0A', '#32D74B', '#64D2FF', '#0A84FF', '#BF5AF2'];
 
+// Settings management
+const settings = {
+  theme: localStorage.getItem('theme') || 'system',
+  fontSize: localStorage.getItem('fontSize') || 'medium',
+  defaultTimerDuration: parseInt(localStorage.getItem('defaultTimerDuration')) || 25,
+  timerSound: localStorage.getItem('timerSound') || 'bell',
+  soundVolume: parseInt(localStorage.getItem('soundVolume')) || 50,
+  desktopNotifications: localStorage.getItem('desktopNotifications') !== 'false',
+  soundNotifications: localStorage.getItem('soundNotifications') !== 'false'
+};
+
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
   setupEventListeners();
@@ -52,6 +63,9 @@ document.addEventListener('DOMContentLoaded', function() {
     progressBar.innerHTML = '<div class="timer-progress-bar"></div>';
     timerContainer.insertBefore(progressBar, timerContainer.querySelector('.timer-controls'));
   }
+  
+  // Initialize settings
+  initializeSettings();
 });
 
 function initializeApp() {
@@ -77,20 +91,6 @@ function startApp() {
     loadDashboard();
   }
   localStorage.setItem('appInitialized', 'true');
-}
-
-function toggleTheme() {
-  currentTheme = currentTheme === 'light' ? 'dark' : 'light';
-  document.documentElement.setAttribute('data-theme', currentTheme);
-  localStorage.setItem('theme', currentTheme);
-  
-  // Update all views to reflect new theme
-  if (document.querySelector('#notes.view.active')) {
-    displayNotes();
-  } else if (document.querySelector('#todos.view.active')) {
-    displayTodos();
-  }
-  loadDashboard();
 }
 
 function loadDashboard() {
@@ -922,5 +922,204 @@ function enhancedSearch(searchTerm) {
     });
     
     displayFilteredTodos(results);
+  }
+}
+
+// Initialize settings
+function initializeSettings() {
+  // Set initial values for settings controls
+  document.querySelectorAll('.theme-option').forEach(option => {
+    if (option.dataset.theme === settings.theme) {
+      option.classList.add('active');
+    }
+    option.addEventListener('click', () => updateThemeSetting(option.dataset.theme));
+  });
+
+  document.getElementById('fontSizeSelect').value = settings.fontSize;
+  document.getElementById('defaultTimerDuration').value = settings.defaultTimerDuration;
+  document.getElementById('timerSound').value = settings.timerSound;
+  document.getElementById('soundVolume').value = settings.soundVolume;
+  document.getElementById('desktopNotifications').checked = settings.desktopNotifications;
+  document.getElementById('soundNotifications').checked = settings.soundNotifications;
+
+  // Add event listeners for settings changes
+  document.getElementById('fontSizeSelect').addEventListener('change', updateFontSize);
+  document.getElementById('defaultTimerDuration').addEventListener('change', updateDefaultTimer);
+  document.getElementById('timerSound').addEventListener('change', updateTimerSound);
+  document.getElementById('soundVolume').addEventListener('change', updateSoundVolume);
+  document.getElementById('desktopNotifications').addEventListener('change', updateNotificationSettings);
+  document.getElementById('soundNotifications').addEventListener('change', updateNotificationSettings);
+  
+  // Data management buttons
+  document.getElementById('exportData').addEventListener('click', exportUserData);
+  document.getElementById('importData').addEventListener('click', importUserData);
+  document.getElementById('clearData').addEventListener('click', clearAllData);
+
+  applySettings();
+}
+
+function updateThemeSetting(theme) {
+  settings.theme = theme;
+  localStorage.setItem('theme', theme);
+  
+  document.querySelectorAll('.theme-option').forEach(option => {
+    option.classList.toggle('active', option.dataset.theme === theme);
+  });
+
+  if (theme === 'system') {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+  } else {
+    document.documentElement.setAttribute('data-theme', theme);
+  }
+}
+
+function updateFontSize(e) {
+  settings.fontSize = e.target.value;
+  localStorage.setItem('fontSize', settings.fontSize);
+  document.documentElement.style.fontSize = getFontSizeValue(settings.fontSize);
+}
+
+function getFontSizeValue(size) {
+  const sizes = {
+    small: '14px',
+    medium: '16px',
+    large: '18px'
+  };
+  return sizes[size] || sizes.medium;
+}
+
+function updateDefaultTimer(e) {
+  settings.defaultTimerDuration = parseInt(e.target.value);
+  localStorage.setItem('defaultTimerDuration', settings.defaultTimerDuration);
+  resetTimer();
+}
+
+function updateTimerSound(e) {
+  settings.timerSound = e.target.value;
+  localStorage.setItem('timerSound', settings.timerSound);
+}
+
+function updateSoundVolume(e) {
+  settings.soundVolume = parseInt(e.target.value);
+  localStorage.setItem('soundVolume', settings.soundVolume);
+}
+
+function updateNotificationSettings(e) {
+  const setting = e.target.id;
+  settings[setting] = e.target.checked;
+  localStorage.setItem(setting, e.target.checked);
+  
+  if (setting === 'desktopNotifications' && e.target.checked) {
+    requestNotificationPermission();
+  }
+}
+
+function exportUserData() {
+  const data = {
+    notes,
+    todos,
+    totalStudyTime,
+    settings
+  };
+  
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'studyspace-backup.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  showNotification('Data exported successfully!');
+}
+
+function importUserData() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  
+  input.onchange = e => {
+    const file = e.target.files[0];
+    const reader = new FileReader();
+    
+    reader.onload = event => {
+      try {
+        const data = JSON.parse(event.target.result);
+        
+        // Validate and import data
+        if (data.notes) notes = data.notes;
+        if (data.todos) todos = data.todos;
+        if (data.totalStudyTime) totalStudyTime = data.totalStudyTime;
+        if (data.settings) Object.assign(settings, data.settings);
+        
+        // Save imported data
+        localStorage.setItem('notes', JSON.stringify(notes));
+        localStorage.setItem('todos', JSON.stringify(todos));
+        localStorage.setItem('studyTime', totalStudyTime);
+        
+        // Apply imported settings
+        applySettings();
+        
+        // Refresh views
+        displayNotes();
+        displayTodos();
+        updateStudyStats();
+        
+        showNotification('Data imported successfully!');
+      } catch (error) {
+        showNotification('Error importing data. Please check the file format.', 'error');
+      }
+    };
+    
+    reader.readAsText(file);
+  };
+  
+  input.click();
+}
+
+function clearAllData() {
+  if (confirm('Are you sure you want to clear all data? This action cannot be undone.')) {
+    localStorage.clear();
+    notes = [];
+    todos = [];
+    totalStudyTime = 0;
+    
+    // Reset to default settings
+    Object.assign(settings, {
+      theme: 'system',
+      fontSize: 'medium',
+      defaultTimerDuration: 25,
+      timerSound: 'bell',
+      soundVolume: 50,
+      desktopNotifications: true,
+      soundNotifications: true
+    });
+    
+    // Apply default settings
+    applySettings();
+    
+    // Refresh views
+    displayNotes();
+    displayTodos();
+    updateStudyStats();
+    
+    showNotification('All data has been cleared.');
+  }
+}
+
+function applySettings() {
+  // Apply theme
+  updateThemeSetting(settings.theme);
+  
+  // Apply font size
+  document.documentElement.style.fontSize = getFontSizeValue(settings.fontSize);
+  
+  // Update timer duration select
+  const timerDurationSelect = document.getElementById('timerDuration');
+  if (timerDurationSelect) {
+    timerDurationSelect.value = settings.defaultTimerDuration;
   }
 }
